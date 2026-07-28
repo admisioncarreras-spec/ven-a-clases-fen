@@ -6,15 +6,15 @@ const B = {
   green:"#0D9255", greenBg:"#E6F7EE", red:"#D93025", redBg:"#FDE8E7", yellowBg:"#FEF6E0",
 };
 
-const SEMANA_INICIO = new Date(2026, 4, 11); // Lunes 11 mayo 2026
-const SEMESTRE_FIN = new Date(2026, 6, 10); // Viernes 10 julio 2026
-const NUM_SEMANAS = 9; // Mayo 11 a Julio 10
+const SEMANA_INICIO = new Date(2026, 6, 1); // Miércoles 1 julio 2026
+const SEMESTRE_FIN = new Date(2026, 6, 31); // Viernes 31 julio 2026
+const NUM_SEMANAS = 5; // Julio 2026
 const DIAS_CORTE = 2;
 const ADMIN_PASS = "fenuchile2026"; // Contraseña del admin — cámbiala cuando publiques
 
 // Fechas excluidas (feriados, recesos, etc.) — formato "YYYY-MM-DD"
-const FECHAS_EXCLUIDAS = ["2026-05-21","2026-05-27"]; // 21 mayo feriado, 27 mayo reservado colegio
-const FECHAS_EXCLUIDAS_CURSO = {"C25":["2026-05-19","2026-05-26","2026-05-28"],"C12":["2026-05-19"]}; // Gonzalo Pardo - Intro Marketing
+const FECHAS_EXCLUIDAS = ["2026-07-16"]; // 16 julio feriado Virgen del Carmen
+const FECHAS_EXCLUIDAS_CURSO = {}; // Sin exclusiones por curso en junio
 
 // ============================================
 // GOOGLE APPS SCRIPT URL — Pegar aquí la URL del paso 9 de la guía
@@ -109,7 +109,7 @@ function genAllDates(){
         const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");
         const fechaStr=y+"-"+m+"-"+dd;
         const key=curso.id+"_"+fechaStr;
-        const excluida=FECHAS_EXCLUIDAS.includes(fechaStr)||FECHAS_EXCLUIDAS.includes(key)||(FECHAS_EXCLUIDAS_CURSO[curso.id]&&FECHAS_EXCLUIDAS_CURSO[curso.id].includes(fechaStr));
+        const excluida=FECHAS_EXCLUIDAS.includes(fechaStr)||FECHAS_EXCLUIDAS.includes(key)||(FECHAS_EXCLUIDAS_CURSO[c.id]&&FECHAS_EXCLUIDAS_CURSO[c.id].includes(fechaStr));
         if(!excluida){
           all[key]={key,cursoId:curso.id,fecha:new Date(d),fechaStr,
             label:DN[d.getDay()]+" "+d.getDate()+" de "+MN[d.getMonth()],
@@ -186,7 +186,7 @@ export default function App(){
 
   const today=useMemo(()=>{const d=new Date();d.setHours(0,0,0,0);return d},[]);
   const cutoff=useMemo(()=>{const d=new Date(today);d.setDate(d.getDate()+DIAS_CORTE);return d},[today]);
-  const pLabel="Otoño 2026";const mesLabel="Mayo 2026";
+  const pLabel="Otoño 2026";const mesLabel="Julio 2026";
 
   // Helper: llamar Apps Script via JSONP (evita problemas de CORS)
   const jsonpCall=(params)=>new Promise((resolve)=>{
