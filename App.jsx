@@ -6,9 +6,9 @@ const B = {
   green:"#0D9255", greenBg:"#E6F7EE", red:"#D93025", redBg:"#FDE8E7", yellowBg:"#FEF6E0",
 };
 
-const SEMANA_INICIO = new Date(2026, 7, 11); // Martes 11 agosto 2026
+const SEMANA_INICIO = new Date(2026, 7, 18); // Martes 18 agosto 2026
 const SEMESTRE_FIN = new Date(2026, 8, 10); // Jueves 10 septiembre 2026
-const NUM_SEMANAS = 5; // Tramo agosto — hasta la semana del 7 de septiembre
+const NUM_SEMANAS = 4; // Tramo 18 agosto — 10 septiembre
 const DIAS_CORTE = 2;
 const ADMIN_PASS = "fenuchile2026"; // Contraseña del admin — cámbiala cuando publiques
 
@@ -18,7 +18,7 @@ const FECHAS_EXCLUIDAS = []; // Sin feriados en este tramo (15 agosto cae sábad
 const FECHAS_EXCLUIDAS_CURSO = {
   "C03": ["2026-08-18", "2026-08-20", "2026-09-08", "2026-09-10"],
   "C04": ["2026-08-13", "2026-08-20", "2026-10-08", "2026-11-10", "2026-11-12"],
-  "C35": ["2026-08-11", "2026-08-13", "2026-09-01", "2026-09-03", "2026-09-08", "2026-09-10"],
+  "C35": ["2026-09-01", "2026-09-03", "2026-09-08", "2026-09-10"],
 };
 
 // ============================================
@@ -183,7 +183,7 @@ export default function App(){
 
   const today=useMemo(()=>{const d=new Date();d.setHours(0,0,0,0);return d},[]);
   const cutoff=useMemo(()=>{const d=new Date(today);d.setDate(d.getDate()+DIAS_CORTE);return d},[today]);
-  const pLabel="Primavera 2026";const mesLabel="11 de agosto al 10 de septiembre";
+  const pLabel="Primavera 2026";const mesLabel="18 de agosto al 10 de septiembre";
 
   // Helper: llamar Apps Script via JSONP (evita problemas de CORS)
   const jsonpCall=(params)=>new Promise((resolve)=>{
