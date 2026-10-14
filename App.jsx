@@ -283,10 +283,6 @@ export default function App(){
         const res=await fetch(APPS_SCRIPT_URL+"?action=checkRut&rut="+encodeURIComponent(form.rut));
         const rutData=await res.json();
         if(rutData){
-          if(rutData.count>=3){
-            setLimiteMsg("Ya alcanzaste el máximo de 3 inscripciones para este mes. ¡Vuelve el próximo mes para inscribirte a más clases!");
-            subRef.current=false;setSubmitting(false);return;
-          }
           if(rutData.inscripciones&&rutData.inscripciones.some(ins=>ins.curso===selC.nombre&&ins.fecha===selF.label)){
             setLimiteMsg("Ya estás inscrito/a en esta clase para esta fecha.");
             subRef.current=false;setSubmitting(false);return;
