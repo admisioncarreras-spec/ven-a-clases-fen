@@ -268,19 +268,20 @@ export default function App(){
   const totalC=useMemo(()=>Object.values(fechas).filter(f=>f.cursoId&&f.fecha>=cutoff&&f.fecha<=SEMESTRE_FIN).reduce((s,f)=>s+f.cuposDisponibles,0),[fechas,cutoff]);
 
   const uForm=(k,v)=>{if(k==="rut")v=formatRut(v);if(k==="telefono")v=v.replace(/[^0-9+]/g,"").slice(0,12);setForm(p=>{const nf={...p,[k]:v};if(k==="region"){nf.colegio="";nf.colSearch="";nf.colOpen=false;nf.colegioOtro=""}return nf});if(err[k])setErr(p=>({...p,[k]:null}))};
-  const validate=()=>{const e={};const n=form.nombre||"";const r=form.rut||"";const c=form.correo||"";const t=form.telefono||"";if(!n.trim())e.nombre="Requerido";if(!r||!validarRut(r))e.rut="RUT inválido. Verifica que esté correcto";if(!c||!c.includes("@")||!c.includes("."))e.correo="Correo inválido";if(!t||t.length<8)e.telefono="Teléfono inválido";if(!form.cursoEscolar)e.cursoEscolar="Requerido";if(!form.colegio)e.colegio="Requerido";if(form.colegio==="Otro"&&!(form.colegioOtro||"").trim())e.colegio="Escribe el nombre de tu colegio";if(!form.region)e.region="Requerido";if(!form.carreraInteres)e.carreraInteres="Requerido";if(!form.justificativo)e.justificativo="Requerido";if(!form.tour)e.tour="Requerido";setErr(e);return!Object.keys(e).length};
+  const validate=()=>{const e={};const n=form.nombre||"";const r=form.rut||"";const c=form.correo||"";const t=form.telefono||"";if(!n.trim())e.nombre="Requerido";if(!r||!validarRut(r))e.rut="RUT inválido. Verifica que esté correcto";{const ce=c.trim().toLowerCase();const dom=ce.split("@")[1]||"";const TYPO={"gmail.con":"gmail.com","gmail.co":"gmail.com","gmail.cl":"gmail.com","gmail.col":"gmail.com","gmail.cm":"gmail.com","gmail.om":"gmail.com","gmial.com":"gmail.com","gmai.com":"gmail.com","gamil.com":"gmail.com","gnail.com":"gmail.com","gmil.com":"gmail.com","hotmail.con":"hotmail.com","hotmial.com":"hotmail.com","hotmal.com":"hotmail.com","hotmail.co":"hotmail.com","outlook.con":"outlook.com","outlok.com":"outlook.com","yahoo.con":"yahoo.com","icloud.con":"icloud.com"};
+    if(!ce||!/^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/.test(ce))e.correo="Correo inválido. Revisa que no tenga espacios ni comas";else if(TYPO[dom])e.correo="¿Quisiste decir "+ce.split("@")[0]+"@"+TYPO[dom]+"? Revisa tu correo";}if(!t||t.length<8)e.telefono="Teléfono inválido";if(!form.cursoEscolar)e.cursoEscolar="Requerido";if(!form.colegio)e.colegio="Requerido";if(form.colegio==="Otro"&&!(form.colegioOtro||"").trim())e.colegio="Escribe el nombre de tu colegio";if(!form.region)e.region="Requerido";if(!form.carreraInteres)e.carreraInteres="Requerido";if(!form.justificativo)e.justificativo="Requerido";if(!form.tour)e.tour="Requerido";setErr(e);return!Object.keys(e).length};
 
   const doSubmit=async()=>{
     if(subRef.current)return;
     try{
-    if(!validate())return;
+    if(!validate()){setTimeout(()=>{const el=document.querySelector(".campo-error");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"center"})},80);return;}
     if(!selF||!selC)return;
     subRef.current=true;setSubmitting(true);
     setLimiteMsg("");
     // Verificar RUT via Apps Script: duplicados + máximo 3 por mes
     if(APPS_SCRIPT_URL&&form.rut){
       try{
-        const res=await fetch(APPS_SCRIPT_URL+"?action=checkRut&rut="+encodeURIComponent(form.rut));
+        const res=await fetch(APPS_SCRIPT_URL+"?action=checkRut&rut="+encodeURIComponent(form.rut)+"&fecha="+encodeURIComponent(selF.label));
         const rutData=await res.json();
         if(rutData){
           if(rutData.inscripciones&&rutData.inscripciones.some(ins=>ins.curso===selC.nombre&&ins.fecha===selF.label)){
@@ -305,7 +306,29 @@ export default function App(){
       }catch(e){}
     }
     const colegioFinal=form.colegio==="Otro"?(form.colegioOtro||""):form.colegio;
-    const ni={id:genId(),...form,colegio:colegioFinal,cursoId:selC.id,cursoNombre:selC.nombre,cursoProfesor:selC.profesor,cursoSala:selC.sala,cursoHora:selC.hora,fechaClase:selF.label,fechaKey:selF.key,fechaStr:selF.fechaStr||"",fecha:new Date().toISOString(),estado:"confirmada"};
+    const idNuevo=genId();
+    if(APPS_SCRIPT_URL){
+      const payload={action:"inscripcion",v:2,inscId:idNuevo,nombre:(form.nombre||"").trim(),rut:form.rut||"",correo:(form.correo||"").trim(),telefono:form.telefono||"",cursoEscolar:form.cursoEscolar||"",region:form.region||"",colegio:colegioFinal,carreraInteres:form.carreraInteres||"",cursoNombre:selC.nombre,cursoProfesor:selC.profesor,emailProf:selC.emailProf||"",fechaClase:selF.label,cursoHora:selC.hora,cursoSala:selC.sala,justificativo:form.justificativo||"",tour:form.tour||""};
+      let resp=null;
+      try{const r=await fetch(APPS_SCRIPT_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)});resp=await r.json();}catch(e){resp=null}
+      if(resp&&resp.success===false){
+        if(resp.code==="lleno")setFechas(p=>({...p,[selF.key]:{...p[selF.key],cuposDisponibles:0}}));
+        setLimiteMsg(resp.error||"No pudimos completar tu inscripción. Intenta de nuevo en un minuto.");
+        subRef.current=false;setSubmitting(false);return;
+      }
+      if(!resp){
+        // No se pudo leer la respuesta: se verifica que la inscripción haya quedado guardada
+        try{
+          const rv=await fetch(APPS_SCRIPT_URL+"?action=checkRut&rut="+encodeURIComponent(form.rut)+"&fecha="+encodeURIComponent(selF.label));
+          const dv=await rv.json();
+          if(dv&&Array.isArray(dv.inscripciones)&&!dv.inscripciones.some(x=>x.curso===selC.nombre)){
+            setLimiteMsg("No pudimos confirmar tu inscripción. Revisa tu conexión a internet e intenta de nuevo.");
+            subRef.current=false;setSubmitting(false);return;
+          }
+        }catch(e){}
+      }
+    }
+    const ni={id:idNuevo,...form,colegio:colegioFinal,cursoId:selC.id,cursoNombre:selC.nombre,cursoProfesor:selC.profesor,cursoSala:selC.sala,cursoHora:selC.hora,fechaClase:selF.label,fechaKey:selF.key,fechaStr:selF.fechaStr||"",fecha:new Date().toISOString(),estado:"confirmada"};
     const nf={...fechas,[selF.key]:{...fechas[selF.key],cuposDisponibles:Math.max(0,(fechas[selF.key]||{cuposDisponibles:0}).cuposDisponibles-1)}};
     const nInsc=[...insc,ni];
     const nc=[...correos,
@@ -313,12 +336,6 @@ export default function App(){
       {id:genId(),tipo:"recordatorio",para:form.correo,nombre:form.nombre,asunto:"Recordatorio: "+selC.nombre+" — "+selF.label,curso:selC.nombre,fechaClase:selF.label,hora:selC.hora,sala:selC.sala,fecha:new Date().toISOString(),estado:"programado"}
     ];
     setFechas(nf);setInsc(nInsc);setCorreos(nc);setLastI(ni);save(nf,nInsc,nc);
-    if(APPS_SCRIPT_URL){
-      try{
-        const payload={action:"inscripcion",inscId:ni.id,nombre:form.nombre||"",rut:form.rut||"",correo:form.correo||"",telefono:form.telefono||"",cursoEscolar:form.cursoEscolar||"",region:form.region||"",colegio:colegioFinal,carreraInteres:form.carreraInteres||"",cursoNombre:selC.nombre,cursoProfesor:selC.profesor,emailProf:selC.emailProf||"",fechaClase:selF.label,cursoHora:selC.hora,cursoSala:selC.sala,justificativo:form.justificativo||"",tour:form.tour||""};
-        fetch(APPS_SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)}).catch(()=>{});
-      }catch(e){}
-    }
     try{localStorage.setItem("fen-estudiante",JSON.stringify({nombre:form.nombre||"",rut:form.rut||"",correo:form.correo||"",telefono:form.telefono||"",cursoEscolar:form.cursoEscolar||"",region:form.region||"",colegio:form.colegio||"",colegioOtro:form.colegioOtro||"",colSearch:form.colSearch||"",carreraInteres:form.carreraInteres||"",justificativo:form.justificativo||"",tour:form.tour||""}))}catch(e){}
     setForm({nombre:"",rut:"",correo:"",telefono:"",cursoEscolar:"",colegio:"",colegioOtro:"",colSearch:"",colOpen:false,region:"",carreraInteres:"",justificativo:"",tour:""});setView("confirmacion");
     }catch(err){subRef.current=false;setSubmitting(false);alert("Error: "+err.message);console.error(err)}
@@ -409,13 +426,13 @@ export default function App(){
         <h3 style={{fontSize:18,fontWeight:700,color:B.blue,margin:"0 0 6px"}}>Elige una fecha</h3>
         <p style={{fontSize:13,color:B.g500,margin:"0 0 8px"}}>Selecciona el día en que quieres asistir</p>
         <p style={{fontSize:12,color:B.g300,margin:"0 0 20px",fontStyle:"italic"}}>Solo se muestran fechas con cupos. Las inscripciones cierran {DIAS_CORTE} días antes de la clase.</p>
-        {gF(selC.id).length>0?(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>{gF(selC.id).map(f=>{const s=selF?.key===f.key;return(<button key={f.key} className="fecha-btn" disabled={f.cuposDisponibles===0} onClick={()=>{if(f.cuposDisponibles>0)setSelF(f)}} style={{padding:"16px 20px",borderRadius:10,border:s?"2.5px solid "+B.blue:f.cuposDisponibles===0?"1px solid "+B.g100:"1px solid "+B.g200,background:s?B.bluePale:f.cuposDisponibles===0?B.g50:"#fff",cursor:f.cuposDisponibles===0?"not-allowed":"pointer",opacity:f.cuposDisponibles===0?.5:1,textAlign:"left",transition:"all .15s"}}><div style={{fontSize:15,fontWeight:700,color:s?B.blue:B.g900,marginBottom:6}}>{f.label}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:B.g500}}><Ic.Clk width={13} height={13}/>{selC.hora}</div><span style={{padding:"3px 10px",borderRadius:5,fontSize:11,fontWeight:700,background:f.cuposDisponibles>0?B.greenBg:B.redBg,color:f.cuposDisponibles>0?B.green:B.red}}>{f.cuposDisponibles>0?f.cuposDisponibles+" cupos":"Sin cupos"}</span></div>{s&&<div style={{marginTop:8,fontSize:12,fontWeight:700,color:B.blue,display:"flex",alignItems:"center",gap:4}}><Ic.Chk width={14} height={14}/> Seleccionada</div>}</button>)})}</div>):(<div style={{textAlign:"center",padding:"40px 24px",background:"#fff",borderRadius:12,border:"1px solid "+B.g200}}><Ic.Cal width={32} height={32} style={{color:B.g300}}/><p style={{fontSize:15,fontWeight:600,color:B.g500,margin:"12px 0 6px"}}>No hay fechas disponibles</p><p style={{fontSize:13,color:B.g300}}>Cupos agotados o dentro del período de cierre.</p></div>)}
+        {gF(selC.id).length>0?(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>{gF(selC.id).map(f=>{const s=selF?.key===f.key;return(<button key={f.key} className="fecha-btn" disabled={f.cuposDisponibles===0} onClick={()=>{if(f.cuposDisponibles>0)setSelF(f)}} style={{padding:"16px 20px",borderRadius:10,border:s?"2.5px solid "+B.blue:f.cuposDisponibles===0?"1px solid "+B.g100:"1px solid "+B.g200,background:s?B.bluePale:f.cuposDisponibles===0?B.g50:"#fff",cursor:f.cuposDisponibles===0?"not-allowed":"pointer",opacity:f.cuposDisponibles===0?.5:1,textAlign:"left",transition:"all .15s"}}><div style={{fontSize:15,fontWeight:700,color:s?B.blue:B.g900,marginBottom:6}}>{f.label}</div><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:B.g500}}><Ic.Clk width={13} height={13}/>{selC.hora}</div><span style={{padding:"3px 10px",borderRadius:5,fontSize:11,fontWeight:700,background:f.cuposDisponibles>0?B.greenBg:B.redBg,color:f.cuposDisponibles>0?B.green:B.red}}>{f.cuposDisponibles>0?f.cuposDisponibles+(f.cuposDisponibles===1?" cupo":" cupos"):"Sin cupos"}</span></div>{s&&<div style={{marginTop:8,fontSize:12,fontWeight:700,color:B.blue,display:"flex",alignItems:"center",gap:4}}><Ic.Chk width={14} height={14}/> Seleccionada</div>}</button>)})}</div>):(<div style={{textAlign:"center",padding:"40px 24px",background:"#fff",borderRadius:12,border:"1px solid "+B.g200}}><Ic.Cal width={32} height={32} style={{color:B.g300}}/><p style={{fontSize:15,fontWeight:600,color:B.g500,margin:"12px 0 6px"}}>No hay fechas disponibles</p><p style={{fontSize:13,color:B.g300}}>Cupos agotados o dentro del período de cierre.</p></div>)}
         {selF&&(<div style={{marginTop:24,textAlign:"center"}}><button onClick={()=>nav("inscripcion")} style={{padding:"13px 36px",background:B.blue,color:"#fff",border:"none",borderRadius:8,fontSize:15,fontWeight:700,display:"inline-flex",alignItems:"center",gap:8}}>Continuar con la inscripción <Ic.Chv/></button></div>)}
       </div>)}
 
       {view==="inscripcion"&&selC&&selF&&(<div style={{animation:"fadeUp .3s ease-out"}}>
         <button onClick={()=>setView("fechas")} style={{display:"inline-flex",alignItems:"center",gap:6,border:"none",background:"none",color:B.blue,fontSize:13,fontWeight:600,padding:"6px 0",marginBottom:18}}><Ic.Arr/> Cambiar fecha</button>
-        <div style={{background:"#fff",borderRadius:12,border:"1px solid "+B.g200,overflow:"hidden",marginBottom:20}}><div style={{height:4,background:B.blue}}/><div style={{padding:"18px 24px",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:14}}><div><div style={{fontSize:11,fontWeight:600,color:B.g500,textTransform:"uppercase",letterSpacing:".06em",marginBottom:3}}>Tu clase</div><div style={{fontSize:18,fontWeight:700}}>{selC.nombre}</div></div><div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}><span style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:B.g700}}><Ic.Cal/>{selF.label}</span><span style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:B.g700}}><Ic.Clk/>{selC.hora}</span><span style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:B.g700}}><Ic.Pin/>{selC.sala}</span><span style={{padding:"5px 12px",borderRadius:6,background:B.bluePale,color:B.blue,fontSize:12,fontWeight:700}}>{selF.cuposDisponibles} cupos</span></div></div></div>
+        <div style={{background:"#fff",borderRadius:12,border:"1px solid "+B.g200,overflow:"hidden",marginBottom:20}}><div style={{height:4,background:B.blue}}/><div style={{padding:"18px 24px",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:14}}><div><div style={{fontSize:11,fontWeight:600,color:B.g500,textTransform:"uppercase",letterSpacing:".06em",marginBottom:3}}>Tu clase</div><div style={{fontSize:18,fontWeight:700}}>{selC.nombre}</div></div><div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center"}}><span style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:B.g700}}><Ic.Cal/>{selF.label}</span><span style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:B.g700}}><Ic.Clk/>{selC.hora}</span><span style={{display:"flex",alignItems:"center",gap:5,fontSize:13,color:B.g700}}><Ic.Pin/>{selC.sala}</span><span style={{padding:"5px 12px",borderRadius:6,background:B.bluePale,color:B.blue,fontSize:12,fontWeight:700}}>{selF.cuposDisponibles} {selF.cuposDisponibles===1?"cupo":"cupos"}</span></div></div></div>
         <div style={{background:"#fff",borderRadius:12,border:"1px solid "+B.g200,padding:28}}>
           <h3 style={{fontSize:18,fontWeight:700,color:B.blue,margin:"0 0 4px"}}>Formulario de Inscripción</h3>
           <p style={{fontSize:13,color:B.g500,margin:"0 0 22px"}}>Completa tus datos para reservar tu cupo</p>
@@ -423,22 +440,22 @@ export default function App(){
             <div style={{gridColumn:"1/-1",display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Nombre completo *</label>
               <input value={form.nombre} onChange={e=>uForm("nombre",e.target.value)} placeholder="Ej: María García López" style={fi("nombre")}/>
-              {err.nombre&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.nombre}</span>}
+              {err.nombre&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.nombre}</span>}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>RUT *</label>
               <input value={form.rut} onChange={e=>uForm("rut",e.target.value)} placeholder="12.345.678-9" style={fi("rut")}/>
-              {err.rut&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.rut}</span>}
+              {err.rut&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.rut}</span>}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Correo electrónico *</label>
               <input value={form.correo} onChange={e=>uForm("correo",e.target.value)} placeholder="tu@correo.com" style={fi("correo")}/>
-              {err.correo&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.correo}</span>}
+              {err.correo&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.correo}</span>}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Teléfono *</label>
               <input value={form.telefono} onChange={e=>uForm("telefono",e.target.value)} placeholder="+56 9 1234 5678" style={fi("telefono")}/>
-              {err.telefono&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.telefono}</span>}
+              {err.telefono&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.telefono}</span>}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Curso escolar actual *</label>
@@ -446,7 +463,7 @@ export default function App(){
                 <option value="">Selecciona...</option>
                 <option value="1° Medio">1° Medio</option><option value="2° Medio">2° Medio</option><option value="3° Medio">3° Medio</option><option value="4° Medio">4° Medio</option><option value="Egresado/a">Egresado/a</option>
               </select>
-              {err.cursoEscolar&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.cursoEscolar}</span>}
+              {err.cursoEscolar&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.cursoEscolar}</span>}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Región *</label>
@@ -454,7 +471,7 @@ export default function App(){
                 <option value="">Selecciona...</option>
                 {REGIONES.map(o=><option key={o} value={o}>{o}</option>)}
               </select>
-              {err.region&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.region}</span>}
+              {err.region&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.region}</span>}
             </div>
             <div style={{gridColumn:"1/-1",display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Colegio *</label>
@@ -467,7 +484,7 @@ export default function App(){
                 {form.colegio && form.colegio!=="Otro" && <div style={{marginTop:4,fontSize:12,color:B.green,fontWeight:600}}>Seleccionado: {form.colegio}</div>}
               </div> : <div style={{padding:"9px 12px",border:"1.5px solid "+B.g200,borderRadius:7,fontSize:14,color:B.g300,background:B.g50}}>Primero selecciona tu región</div>}
               {form.colegio==="Otro" && <input value={form.colegioOtro||""} onChange={e=>uForm("colegioOtro",e.target.value)} placeholder="Escribe el nombre de tu colegio" style={{...fi("colegioOtro"),marginTop:6}}/>}
-              {err.colegio && <span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.colegio}</span>}
+              {err.colegio && <span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.colegio}</span>}
             </div>
             <div style={{gridColumn:"1/-1",display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>Carrera de interés *</label>
@@ -475,7 +492,7 @@ export default function App(){
                 <option value="">Selecciona...</option>
                 {CARRERAS_INT.map(o=><option key={o} value={o}>{o}</option>)}
               </select>
-              {err.carreraInteres&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.carreraInteres}</span>}
+              {err.carreraInteres&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.carreraInteres}</span>}
             </div>
             <div style={{gridColumn:"1/-1",display:"flex",flexDirection:"column",gap:5}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>¿Necesitas justificativo de asistencia para tu colegio? *</label>
@@ -485,7 +502,7 @@ export default function App(){
                 <option value="Sí, necesito justificativo">Sí, necesito justificativo</option>
                 <option value="No, no lo necesito">No, no lo necesito</option>
               </select>
-              {err.justificativo&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.justificativo}</span>}
+              {err.justificativo&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.justificativo}</span>}
             </div>
             <div style={{marginBottom:14}}>
               <label style={{fontSize:12,fontWeight:600,color:B.g700}}>¿Te gustaría realizar un tour por la FEN después de la clase? *</label>
@@ -494,7 +511,7 @@ export default function App(){
                 <option value="Sí, quiero hacer el tour">Sí, quiero hacer el tour</option>
                 <option value="No, gracias">No, gracias</option>
               </select>
-              {err.tour&&<span style={{fontSize:11,color:B.red,fontWeight:500}}>{err.tour}</span>}
+              {err.tour&&<span className="campo-error" style={{fontSize:11,color:B.red,fontWeight:500}}>{err.tour}</span>}
             </div>
           </div>
           <div style={{marginTop:16,background:"#F0F4FF",border:"1px solid #D8DDE8",borderRadius:8,padding:"12px 16px"}}><p style={{margin:0,fontSize:12,color:B.g700,lineHeight:1.5}}>Al inscribirte, autorizas a la Facultad de Economía y Negocios de la Universidad de Chile a utilizar tus datos para contactarte y enviarte información sobre carreras, actividades y procesos de admisión.</p></div>
