@@ -164,10 +164,14 @@ const DIRECCION="Diagonal Paraguay 205, Santiago";
 const MAPA="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent("Facultad de Economía y Negocios Universidad de Chile, Diagonal Paraguay 205, Santiago");
 const linkCalendario=(c,f)=>{const m=String(c.hora).match(/(\d{1,2}):(\d{2})\D+(\d{1,2}):(\d{2})/);if(!m||!f||!f.fechaStr)return null;const p=n=>String(n).padStart(2,"0");const d=f.fechaStr.replace(/-/g,"");
   return "https://calendar.google.com/calendar/render?action=TEMPLATE&text="+encodeURIComponent("Ven a Clases FEN: "+c.nombre)+"&dates="+d+"T"+p(m[1])+m[2]+"00/"+d+"T"+p(m[3])+m[4]+"00&ctz=America/Santiago&location="+encodeURIComponent("FEN Universidad de Chile, "+DIRECCION)+"&details="+encodeURIComponent("Llega 15 minutos antes al stand de Ven a Clases ("+LUGAR_ENCUENTRO+"). Un monitor te lleva a la sala.")};
+const isoLocal=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const PRIMER_NOMBRE=n=>String(n||"").trim().split(/\s+/)[0]||"";
 const leer=(k,def)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):def}catch(e){return def}};
 const guardar=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
-const leerPases=()=>{const v=leer("fen-pases",[]);return Array.isArray(v)?v.filter(x=>x&&x.id&&x.fechaStr):[]};
+const leerPases=()=>{const v=leer("fen-pases",[]);const l=Array.isArray(v)?v.filter(x=>x&&x.id&&x.fechaStr):[];
+  try{const hoy=isoLocal(new Date());const ant=leer("fen-v3",null);const viejas=(ant&&Array.isArray(ant.i)?ant.i:[]).filter(x=>x&&x.id&&/^[A-Za-z0-9]{6,16}$/.test(String(x.id))&&x.fechaStr&&x.fechaStr>=hoy&&!l.some(y=>y.id===x.id))
+    .map(x=>({id:String(x.id),nombre:x.nombre||"",correo:x.correo||"",cursoId:x.cursoId||"",cursoNombre:x.cursoNombre||"",cursoProfesor:x.cursoProfesor||"",cursoHora:x.cursoHora||"",fechaClase:x.fechaClase||"",fechaStr:x.fechaStr,tour:x.tour||"",justificativo:x.justificativo||"",creado:x.fecha||""}));
+    return l.concat(viejas)}catch(e){return l}};
 const FORM0={nombre:"",rut:"",correo:"",telefono:"",cursoEscolar:"",colegio:"",colegioOtro:"",colSearch:"",colOpen:false,region:"",carreraInteres:"",justificativo:"",tour:""};
 const MES3=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const celularValido=t=>{let d=String(t||"").replace(/\D/g,"");if(d.length===11&&d.startsWith("56"))d=d.slice(2);return /^9\d{8}$/.test(d)};
@@ -179,7 +183,6 @@ const leerSesion=k=>{try{return sessionStorage.getItem(k)||""}catch(e){return ""
 const guardarSesion=(k,v)=>{try{if(v)sessionStorage.setItem(k,v);else sessionStorage.removeItem(k)}catch(e){}};
 const MOTIVOS=[["dia","No puedo asistir ese día"],["error","Me inscribí por error"],["otro","Otro motivo"]];
 const LLEG0={nombre:"",rut:"",correo:"",telefono:"",colegio:"",clase:"",justificativo:"No"};
-const isoLocal=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const suave=()=>{try{return window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"}catch(e){return "auto"}};
 
 // ============================================================
@@ -542,6 +545,7 @@ export default function App(){
   const [edErr,setEdErr]=useState({});
   const [busca,setBusca]=useState({rut:"",dato:"",msg:null,busy:false});
   const [errorCupos,setErrorCupos]=useState(false);
+  const [reintento,setReintento]=useState(0);
   const [pin,setPin]=useState(()=>leerSesion("fen-pin"));
   const [pinIn,setPinIn]=useState("");
   const [st,setSt]=useState({fechaISO:null,data:null,cargando:false});
@@ -571,6 +575,7 @@ export default function App(){
   const [conocido,setConocido]=useState(()=>leer("fen-estudiante",null));
   const panelRef=useRef(null),origenRef=useRef(null),tituloRef=useRef(null),diasRef=useRef(null),bloqueRef=useRef(null),fondoRef=useRef([]),primera=useRef(true);
   const selRef=useRef({f:null,reservado:false});
+  const paseRef=useRef(null);useEffect(()=>{paseRef.current=pase},[pase]);
   useEffect(()=>{selRef.current.f=selF},[selF]);
 
   const today=useMemo(()=>{const d=new Date();d.setHours(0,0,0,0);return d},[]);
@@ -605,7 +610,9 @@ export default function App(){
   useEffect(()=>{const v=()=>{if(document.visibilityState==="visible")cargarCupos(true)};document.addEventListener("visibilitychange",v);return()=>document.removeEventListener("visibilitychange",v)},[]);
 
   // ¿El servidor ya permite gestionar desde la web? (si no, la web funciona como antes)
-  useEffect(()=>{if(!APPS_SCRIPT_URL)return;(async()=>{try{const d=await (await fetch(APPS_SCRIPT_URL+"?action=ping")).json();setApi(d&&d.v>=3?3:2)}catch(e){setApi(2)}})()},[]);
+  const revisarApi=async()=>{if(!APPS_SCRIPT_URL)return;let n=0;while(n<2){try{const d=await (await fetch(APPS_SCRIPT_URL+"?action=ping")).json();setApi(d&&d.v>=3?3:2);return}catch(e){n++;await new Promise(r=>setTimeout(r,2500))}}setApi(a=>a===0?2:a)};
+  useEffect(()=>{revisarApi()},[]);
+  useEffect(()=>{const v=()=>{if(document.visibilityState==="visible"&&api!==3)revisarApi()};document.addEventListener("visibilitychange",v);return()=>document.removeEventListener("visibilitychange",v)},[api]);
   const llamar=async(body)=>{
     let ctrl=null,t=null;try{ctrl=new AbortController();t=setTimeout(()=>ctrl.abort(),30000)}catch(e){}
     try{const r=await fetch(APPS_SCRIPT_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body),signal:ctrl?ctrl.signal:undefined});return await r.json()}
@@ -622,6 +629,7 @@ export default function App(){
       const s=e.state;
       setPanel(!!s.panel);
       if(s.v==="reserva"&&(!selRef.current.f||selRef.current.reservado))setView("explorar");
+      else if(s.v==="pase"&&!paseRef.current)setView("explorar");
       else setView(s.v||"explorar");
       if(s.paso)setPaso(s.paso);};
     const alHash=()=>{const h=window.location.hash;if(desdeHistorial.current!==null&&desdeHistorial.current===h){desdeHistorial.current=null;return}desdeHistorial.current=null;if(/^#(ocupacion|admin)$/.test(h)){setPanel(false);setView("ocupacion")}else if(h==="#stand"){setPanel(false);setView("stand")}else{const id=idDeHash();if(id){setPanel(false);setAbrirId(id);setView("abriendo")}}};
@@ -651,7 +659,7 @@ export default function App(){
   const totalDia=agenda.reduce((s,[,it])=>s+it.filter(x=>x.f.cuposDisponibles>0).length,0);
 
   const fechasDe=c=>reservables.filter(f=>f.cursoId===c.id).sort((a,b)=>a.fecha-b.fecha);
-  const irArriba=()=>{try{window.scrollTo({top:0,behavior:suave()})}catch(e){window.scrollTo(0,0)}};
+  const irArriba=()=>{setTimeout(()=>{try{window.scrollTo(0,0)}catch(e){}},40)};
 
   // Foco al título al cambiar de pantalla (para lectores de pantalla y teclado)
   useEffect(()=>{if(primera.current){primera.current=false;return}const t=setTimeout(()=>{try{tituloRef.current&&tituloRef.current.focus({preventScroll:true})}catch(e){}},60);return()=>clearTimeout(t)},[view,paso]);
@@ -669,7 +677,7 @@ export default function App(){
   },[panel]);
 
   const empezarReserva=()=>{if(!selF||selF.cuposDisponibles<=0)return;selRef.current.reservado=false;origenRef.current=null;setPanel(false);setPaso(1);setErr({});setLimiteMsg("");subRef.current=false;setSubmitting(false);setView("reserva");marcar({v:"reserva",paso:1},true);irArriba()};
-  const ir=(v,id)=>{origenRef.current=null;setPanel(false);setView(v);setLimiteMsg("");setGModo(null);marcar({v},false,urlDe(v,id));irArriba()};
+  const ir=(v,id,mantenerCambio)=>{if(!mantenerCambio)setCambio(null);origenRef.current=null;setPanel(false);setView(v);setLimiteMsg("");setGModo(null);marcar({v},false,urlDe(v,id));irArriba()};
   const verClases=()=>{try{bloqueRef.current.scrollIntoView({behavior:suave(),block:"start"})}catch(e){}};
 
   const uForm=(k,v)=>{if(k==="rut")v=formatRut(v);if(k==="telefono")v=v.replace(/[^0-9+]/g,"").slice(0,12);setForm(p=>{const nf={...p,[k]:v};if(k==="region"){nf.colegio="";nf.colSearch="";nf.colOpen=false;nf.colegioOtro=""}return nf});if(err[k])setErr(p=>({...p,[k]:null}))};
@@ -800,38 +808,40 @@ export default function App(){
       <h3 id="t-gestion" className="sr-only">Gestionar mi inscripción</h3>
       {msg&&<div className={"aviso "+(msg.tipo==="ok"?"exito":"error")} role={msg.tipo==="ok"?"status":"alert"}>{msg.t}</div>}
       {!s0&&<p className="g-cargando" role="status">Revisando tu inscripción…</p>}
+      {s0&&s0.sinRed&&<div className="aviso error" role="alert">No pudimos revisar tu inscripción (¿sin internet?). <button className="link" onClick={()=>{setSrv(s=>{const y={...s};delete y[pase.id];return y});setReintento(n=>n+1)}}>Reintentar</button>
+        {APPS_SCRIPT_URL&&pase.estado!=="anulada"&&<> o <a href={APPS_SCRIPT_URL+"?action=anular&id="+encodeURIComponent(pase.id)} target="_blank" rel="noopener">anula desde aquí</a></>}.</div>}
       {s0&&s0.noEncontrada&&<div className="aviso error">No encontramos esta inscripción en el sistema. Si crees que es un error, escríbenos a <a href="mailto:admisioncarreras@fen.uchile.cl">admisioncarreras@fen.uchile.cl</a> con tu RUT.</div>}
-      {s0&&!s0.noEncontrada&&!gModo&&est==="vigente"&&(<div className="g-lista">
+      {s0&&!s0.noEncontrada&&!s0.sinRed&&!gModo&&est==="vigente"&&(<div className="g-lista">
         <h3 className="g-tit">¿Necesitas cambiar algo?</h3>
         <button className="g-fila" onClick={()=>{setGFecha(null);setGMsg(null);setGModo("fechas")}}><span><b>Cambiar fecha u horario</b><small>Otro día de esta clase u otra clase</small></span><i aria-hidden="true">›</i></button>
         <button className="g-fila" disabled={gBusy} onClick={abrirDatos}><span><b>Corregir mis datos</b><small>Correo, celular, colegio, tour o justificativo</small></span><i aria-hidden="true">›</i></button>
         <button className="g-fila" disabled={gBusy} onClick={()=>accion("reenviar",{},"Te reenviamos la confirmación a "+(pase.correo||s0.correo)+". Si no llega, revisa spam o promociones.")}><span><b>Reenviar el correo de confirmación</b><small>A {pase.correo||s0.correo}</small></span><i aria-hidden="true">›</i></button>
         <button className="g-fila rojo" onClick={()=>{setGMsg(null);setGModo("anular")}}><span><b>No puedo ir: anular inscripción</b><small>Tu cupo queda libre para otro estudiante</small></span><i aria-hidden="true">›</i></button>
       </div>)}
-      {s0&&!s0.noEncontrada&&!gModo&&est==="pasada"&&(<div className="g-lista"><button className="g-fila" onClick={abrirDatos}><span><b>Corregir mis datos o pedir justificativo</b><small>Si asististe, el justificativo llega al correo que dejes</small></span><i aria-hidden="true">›</i></button></div>)}
+      {s0&&!s0.noEncontrada&&!s0.sinRed&&!gModo&&est==="pasada"&&(<div className="g-lista"><button className="g-fila" onClick={abrirDatos}><span><b>Corregir mis datos o pedir justificativo</b><small>Si asististe, el justificativo llega al correo que dejes</small></span><i aria-hidden="true">›</i></button></div>)}
       {gModo==="fechas"&&(<div className="g-caja">
-        <h3>Cambiar a otra fecha de esta clase</h3>
+        <h3 tabIndex={-1} ref={gCajaRef} style={{outline:"none",scrollMarginTop:84}}>Cambiar a otra fecha de esta clase</h3>
         {otras.length?<div className="otras" role="group" aria-label="Otras fechas">{otras.map(f=><button key={f.key} aria-pressed={!!(gFecha&&gFecha.key===f.key)} disabled={f.cuposDisponibles<=0} onClick={()=>setGFecha(f)}>{f.labelShort}{f.cuposDisponibles<=0?" (lleno)":""}</button>)}</div>
           :<p className="g-nota">No quedan otras fechas disponibles para esta clase.</p>}
         {gFecha&&<button className="cta" disabled={gBusy} onClick={()=>doCambio(pase,c,gFecha)}>{gBusy?"Cambiando…":"Cambiar al "+gFecha.label.toLowerCase()}</button>}
-        <button className="g-btn" onClick={()=>{setCambio(pase);setGModo(null);ir("explorar")}}>Elegir otra clase u otro horario</button>
+        <button className="g-btn" onClick={()=>{setCambio(pase);setGModo(null);ir("explorar",null,true)}}>Elegir otra clase u otro horario</button>
         <button className="volver" onClick={()=>setGModo(null)}>Cancelar</button>
       </div>)}
       {gModo==="anular"&&(<div className="g-caja">
-        <h3>¿Por qué no puedes ir?</h3>
+        <h3 tabIndex={-1} ref={gCajaRef} style={{outline:"none",scrollMarginTop:84}}>¿Por qué no puedes ir?</h3>
         <p className="g-nota">Al anular, tu cupo queda libre para otro estudiante.</p>
         {MOTIVOS.map(([k,l])=><button key={k} className="g-btn rojo" disabled={gBusy} onClick={()=>anular(k)}>{gBusy?"Anulando…":l}</button>)}
         {otras.some(f=>f.cuposDisponibles>0)&&<p className="g-nota">¿Te sirve otro día? <button className="link" onClick={()=>setGModo("fechas")}>Cambia la fecha</button> en vez de anular.</p>}
         <button className="volver" onClick={()=>setGModo(null)}>No, mantener mi inscripción</button>
       </div>)}
       {gModo==="verificar"&&(<form className="g-caja" onSubmit={e=>{e.preventDefault();confirmarVerif()}}>
-        <h3>Primero, confirma que eres tú</h3>
+        <h3 tabIndex={-1} ref={gCajaRef} style={{outline:"none",scrollMarginTop:84}}>Primero, confirma que eres tú</h3>
         <p className="g-nota">Para proteger tus datos, escribe tu RUT, o el correo o celular con que te inscribiste.</p>
         <div className="campo"><label htmlFor="g-verif">RUT, correo o celular</label><input id="g-verif" value={verifIn} onChange={e=>setVerifIn(e.target.value)} autoComplete="off"/></div>
         <div className="acciones"><button className="cta" disabled={gBusy||verifIn.trim().length<5}>{gBusy?"Revisando…":"Continuar"}</button><button type="button" className="volver" onClick={()=>setGModo(null)}>Cancelar</button></div>
       </form>)}
       {gModo==="datos"&&ed&&(<div className="g-caja">
-        <h3>Corregir mis datos</h3>
+        <h3 tabIndex={-1} ref={gCajaRef} style={{outline:"none",scrollMarginTop:84}}>Corregir mis datos</h3>
         <div className="campos">
           {[["nombre","Nombre y apellido","name","text"],["rut","RUT","off","text"],["correo","Correo","email","email"],["telefono","Celular (WhatsApp)","tel","tel"]].map(([k,l,ac,ty])=>(
             <div key={k} className={"campo"+(k==="nombre"||k==="correo"?" ancho":"")+(edErr[k]?" err":"")}><label htmlFor={"g-"+k}>{l}</label><input id={"g-"+k} type={ty} autoComplete={ac} value={ed[k]||""} onChange={e=>uEd(k,e.target.value)} aria-invalid={edErr[k]?true:undefined} aria-describedby={edErr[k]?"ge-"+k:undefined}/>{edErr[k]&&<span className="campo-error" id={"ge-"+k}>{edErr[k]}</span>}</div>))}
@@ -854,16 +864,17 @@ export default function App(){
     return {id:r.id,nombre:r.nombre,correo:r.correo,cursoId:c?c.id:"",cursoNombre:r.curso,cursoProfesor:r.profesor,cursoHora:r.hora,fechaClase:r.fecha,fechaStr:r.fechaISO,tour:r.tour,justificativo:r.justificativo,estado:r.estado,confirmado:!!r.confirmado,asistio:!!r.asistio}};
   const actualizarPase=(np,agregar)=>{setPase(p=>p&&p.id===np.id?{...p,...np}:p);setPases(ps=>{const esta=ps.some(x=>x.id===np.id);if(!esta&&!agregar)return ps;const l=esta?ps.map(x=>x.id===np.id?{...x,...np}:x):[...ps,{...np,creado:new Date().toISOString()}];guardar("fen-pases",l);return l})};
   const recibir=r=>{setSrv(s=>{const prev=s[r.id];const nuevo=(!r.completo&&prev&&prev.completo)?{...r,rut:prev.rut,correo:prev.correo,telefono:prev.telefono,colegio:prev.colegio,region:prev.region,cursoEscolar:prev.cursoEscolar,carreraInteres:prev.carreraInteres,completo:true}:r;return {...s,[r.id]:nuevo}});
-    const np=deServidor(r);if(!r.completo){const prev=pases.find(x=>x.id===r.id)||(pase&&pase.id===r.id?pase:null);if(prev&&prev.correo)np.correo=prev.correo}actualizarPase(np)};
+    const np=deServidor(r);if(!r.completo){const prev=pases.find(x=>x.id===r.id)||(pase&&pase.id===r.id?pase:null);if(prev&&prev.correo&&!String(prev.correo).includes("•"))np.correo=prev.correo}actualizarPase(np)};
   const verPase=p=>{setPase(p);setRecien(false);setGModo(null);ir("pase",p.id)};
 
   // Al abrir un pase: su estado al día (anulada, confirmada, cambios hechos desde el correo)
   useEffect(()=>{
     if(view!=="pase"||!pase||api!==3)return;let vivo=true;
     (async()=>{try{const d=await (await fetch(APPS_SCRIPT_URL+"?action=reserva&id="+encodeURIComponent(pase.id))).json();if(!vivo)return;
-      if(d&&d.success)recibir(d.reserva);else if(d&&d.code==="id")setSrv(s=>({...s,[pase.id]:{noEncontrada:true}}))}catch(e){}})();
+      if(d&&d.success)recibir(d.reserva);else if(d&&d.code==="id")setSrv(s=>({...s,[pase.id]:{noEncontrada:true}}));else setSrv(s=>s[pase.id]&&!s[pase.id].sinRed?s:{...s,[pase.id]:{sinRed:true}})}
+      catch(e){if(vivo)setSrv(s=>s[pase.id]&&!s[pase.id].sinRed?s:{...s,[pase.id]:{sinRed:true}})}})();
     return()=>{vivo=false};
-  },[view,pase&&pase.id,api]);
+  },[view,pase&&pase.id,api,reintento]);
 
   // Enlace del correo (#r/código): abre el pase de esa inscripción
   useEffect(()=>{
@@ -878,6 +889,8 @@ export default function App(){
   },[view,abrirId,api]);
 
   const mensaje=(id,tipo,t)=>setGMsg({id,tipo,t});
+  const gCajaRef=useRef(null);
+  useEffect(()=>{if(!gModo)return;const t=setTimeout(()=>{const el=gCajaRef.current;if(!el)return;try{el.scrollIntoView({behavior:suave(),block:"start"})}catch(e){}try{el.focus({preventScroll:true})}catch(e){}},60);return()=>clearTimeout(t)},[gModo]);
   const accion=async(op,extra,okMsg)=>{
     if(gBusy||!pase)return null;setGBusy(true);setGMsg(null);
     const r=await llamar({action:"gestionar",op,id:pase.id,...extra});setGBusy(false);
@@ -891,17 +904,17 @@ export default function App(){
     const r=await llamar({action:"gestionar",op:"cambiar",id:base.id,cursoNombre:c.nombre,cursoProfesor:c.profesor,cursoHora:c.hora,cursoSala:c.sala,fechaClase:f.label});
     setGBusy(false);
     if(!(r&&r.success)){if(r&&r.code==="lleno")setFechas(p=>p[f.key]?{...p,[f.key]:{...p[f.key],cuposDisponibles:0}}:p);mensaje(base.id,"error",(r&&r.error)||"No pudimos cambiar tu inscripción. Intenta de nuevo.");return}
-    const np=deServidor(r.reserva);
+    const np=deServidor(r.reserva);if(base.correo&&!String(base.correo).includes("•"))np.correo=base.correo;
     liberarCupo(base);setFechas(p=>p[f.key]?{...p,[f.key]:{...p[f.key],cuposDisponibles:Math.max(0,p[f.key].cuposDisponibles-1)}}:p);
     setPases(ps=>{const l=[...ps.filter(x=>x.id!==base.id&&x.id!==np.id),{...np,creado:new Date().toISOString()}];guardar("fen-pases",l);return l});
-    setSrv(s=>({...s,[np.id]:r.reserva}));
+    setSrv(s=>({...s,[np.id]:r.reserva}));if(verifs[base.id])setVerifs(x=>({...x,[np.id]:verifs[base.id]}));
     setCambio(null);setPanel(false);setGModo(null);setPase(np);setRecien(false);
     mensaje(np.id,"ok","¡Listo! Cambiamos tu inscripción al "+np.fechaClase.toLowerCase()+". Te enviamos la nueva confirmación a "+np.correo+".");
     setView("pase");marcar({v:"pase"},true,"#r/"+np.id);irArriba();
   };
   const llenarEd=s0=>{setEd({nombre:s0.nombre,rut:s0.rut,correo:s0.correo,telefono:s0.telefono,cursoEscolar:s0.cursoEscolar,region:s0.region,colegio:s0.colegio,carreraInteres:s0.carreraInteres,justificativo:s0.justificativo,tour:s0.tour});setEdErr({});setGModo("datos")};
   const verificar=async(id,v)=>{const r=await llamar({action:"gestionar",op:"verDatos",id,verif:v});if(r&&r.success){setVerifs(x=>({...x,[id]:v}));setSrv(s=>({...s,[id]:r.reserva}));return r.reserva}return {error:(r&&r.error)||"No pudimos verificar. Intenta de nuevo."}};
-  const abrirDatos=async()=>{const id=pase.id;const s0=srv[id];if(!s0||s0.noEncontrada)return;setGMsg(null);
+  const abrirDatos=async()=>{const id=pase.id;const s0=srv[id];if(!s0||s0.noEncontrada||s0.sinRed)return;setGMsg(null);
     if(s0.completo&&verifs[id]){llenarEd(s0);return}
     if(verifs[id]){setGBusy(true);const r=await verificar(id,verifs[id]);setGBusy(false);if(!r.error){llenarEd(r);return}}
     setVerifIn("");setGModo("verificar")};
@@ -914,8 +927,12 @@ export default function App(){
     if(!/^[^\s@,;]+@[^\s@,;]+\.[a-z]{2,}$/.test(ce))e.correo="Correo inválido. Revisa que no tenga espacios ni comas";else if(TYPO[dom])e.correo="¿Quisiste decir "+ce.split("@")[0]+"@"+TYPO[dom]+"?";
     if(String(ed.telefono||"").replace(/\D/g,"").length<8)e.telefono="Escribe tu celular, por ejemplo 912345678";
     setEdErr(e);if(Object.keys(e).length)return;
-    const r=await accion("datos",{verif:verifs[pase.id],datos:{...ed,nombre:n,correo:ce}},null);
-    if(r){setGModo(null);if(String(verifs[pase.id]||"").includes("@"))setVerifs(x=>({...x,[pase.id]:ce}));else if(validarRut(verifs[pase.id]||""))setVerifs(x=>({...x,[pase.id]:ed.rut}));actualizarPase({...deServidor(r.reserva),correo:ce});mensaje(r.reserva.id,"ok","Guardamos tus datos."+(r.reenviado?" Te enviamos la confirmación a "+ce+".":""));
+    const id0=pase.id;setGBusy(true);setGMsg(null);
+    const r0=await llamar({action:"gestionar",op:"datos",id:id0,verif:verifs[id0],datos:{...ed,nombre:n,correo:ce}});setGBusy(false);
+    if(r0&&r0.code==="verif"){setVerifs(x=>{const y={...x};delete y[id0];return y});setVerifIn("");mensaje(id0,"error","Por seguridad, confirma de nuevo tu RUT, correo o celular.");setGModo("verificar");return}
+    if(!(r0&&r0.success)){mensaje(id0,"error",(r0&&r0.error)||"No pudimos guardar. Intenta de nuevo.");return}
+    recibir(r0.reserva);const r=r0;
+    if(r){const vv=String(verifs[id0]||"");setVerifs(x=>({...x,[id0]:vv.includes("@")?ce:validarRut(vv)?ed.rut:String(ed.telefono||"").replace(/\D/g,"")}));setGModo(null);actualizarPase({...deServidor(r.reserva),correo:ce});mensaje(r.reserva.id,"ok","Guardamos tus datos."+(r.reenviado?" Te enviamos la confirmación a "+ce+".":""));
       try{const fe=leer("fen-estudiante",null);if(fe&&validarRut(fe.rut)&&nk(fe.rut)===nk((srv[pase.id]||{}).rut||""))guardar("fen-estudiante",{...fe,...ed,nombre:n,correo:ce})}catch(x){}}
   };
 
@@ -1113,7 +1130,7 @@ export default function App(){
 
       {view==="pase"&&pase&&(<div className="wrap"><div className="pase-wrap">
         <div className="pase-ok"><h2 tabIndex={-1} ref={tituloRef}>{recien?"¡Tu cupo está reservado!":pase.estado==="anulada"?"Inscripción anulada":"Tu pase de visita"}</h2>{pase.estado!=="anulada"&&<p>{pase.estado==="pasada"?"Esta clase ya pasó.":"Te esperamos, "+PRIMER_NOMBRE(pase.nombre)+"."}</p>}</div>
-        {Pase({p:pase,gestion:api===3,destacado:api===3&&pase.estado==="vigente"&&!pase.confirmado&&srv[pase.id]&&!srv[pase.id].noEncontrada&&!gModo?<button className="cta verde" disabled={gBusy} onClick={()=>accion("confirmar",{},"¡Gracias! Confirmaste que vienes. Te esperamos.")}>{gBusy?"Guardando…":"Confirmar que voy"}</button>:null})}
+        {Pase({p:pase,gestion:api===3,destacado:api===3&&pase.estado==="vigente"&&!pase.confirmado&&srv[pase.id]&&!srv[pase.id].noEncontrada&&!srv[pase.id].sinRed&&!gModo?<button className="cta verde" disabled={gBusy} onClick={()=>accion("confirmar",{},"¡Gracias! Confirmaste que vienes. Te esperamos.")}>{gBusy?"Guardando…":"Confirmar que voy"}</button>:null})}
         {api===3&&Gestion()}
         {recien&&<p className="mail-ok">Te enviamos la confirmación a <b>{pase.correo}</b>. Si no te llega en 10 minutos, revisa spam o escríbenos a <a href="mailto:admisioncarreras@fen.uchile.cl">admisioncarreras@fen.uchile.cl</a>.</p>}
         <div className="acciones">
@@ -1169,7 +1186,7 @@ export default function App(){
           const grupos={};filas.forEach(f=>{const h=horaInicio(f.hora);(grupos[h]=grupos[h]||[]).push(f)});
           const Fila=it=>{const no=/^NO/.test(it.regalo);return(<div className={"st-fila"+(it.asistio?" llego":"")} key={it.id+(it.fechaISO||"")}>
             <div className="st-info"><div className="st-n">{it.nombre}</div><div className="st-c">{stBus?it.fecha+", "+it.hora+", ":""}{it.clase}{it.sala?", sala "+it.sala:""}</div>
-              <div className="tags">{it.anulada&&<span className="tag no">Anulada</span>}{it.confirmado&&<span className="tag">Confirmó</span>}{it.tour&&<span className="tag">Tour</span>}{it.justificativo&&<span className="tag">Justificativo</span>}{it.sinInscripcion&&<span className="tag">Sin inscripción</span>}<span className={"tag "+(no?"no":"si")}>Regalo: {no?"no":"sí"}{no?" ("+it.regalo.replace(/^NO — /,"")+")":""}</span></div></div>
+              <div className="tags">{it.anulada&&<span className="tag no">Anulada</span>}{it.confirmado&&<span className="tag">Confirmó</span>}{it.tour&&<span className="tag">Tour</span>}{it.justificativo&&<span className="tag">Justificativo</span>}{it.sinInscripcion&&<span className="tag">Sin inscripción</span>}<span className={"tag "+(no?"no":"si")}>Regalo: {no?"no, "+it.regalo.replace(/^NO — /,"").replace(/\(([^)]+)\)/,(m,x)=>"el "+x.toLowerCase()):"sí"}</span></div></div>
             <button className={"st-llego"+(it.asistio?" on":"")} aria-pressed={it.asistio} disabled={!!stBusy[it.id]||it.anulada} onClick={()=>marcarLlego(it)} aria-label={(it.asistio?"Quitar llegada de ":"Marcar llegada de ")+it.nombre}>{it.asistio?"✓ Llegó":"Llegó"}</button>
           </div>)};
           return(<>
