@@ -1,0 +1,10 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "ven-a-clases-fen.vercel.app" }],
+      "destination": "https://venaclases.fen.uchile.cl/$1",
+      "permanent": true
+    }
+  ]
+}
